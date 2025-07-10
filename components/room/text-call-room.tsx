@@ -30,6 +30,8 @@ import {
   UserX,
   Trash2,
   Crown,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 import {
   joinRoom,
@@ -59,15 +61,20 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   const [isComposing, setIsComposing] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [showChat, setShowChat] = useState(false)
+  const [chatExpanded, setChatExpanded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isJoined, setIsJoined] = useState(false)
+  const [autoScroll, setAutoScroll] = useState(true)
+  const [unreadMessages, setUnreadMessages] = useState(0)
   const router = useRouter()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLInputElement>(null)
   const updateTimeoutRef = useRef<NodeJS.Timeout>()
   const cleanupRef = useRef<(() => void) | null>(null)
+  const lastMessageCountRef = useRef(0)
 
   const currentUser = room && currentUserId ? room.users[currentUserId] : null
 
@@ -95,6 +102,24 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     },
     [updateTypingState],
   )
+
+  // チャットの自動スクロール処理
+  const scrollToBottom = useCallback(() => {
+    if (chatScrollRef.current && autoScroll) {
+      const scrollContainer = chatScrollRef.current
+      scrollContainer.scrollTop = scrollContainer.scrollHeight
+    }
+  }, [autoScroll])
+
+  // チャットスクロール監視
+  const handleChatScroll = useCallback(() => {
+    if (chatScrollRef.current) {
+      const scrollContainer = chatScrollRef.current
+      const { scrollTop, scrollHeight, clientHeight } = scrollContainer
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10 // 10px の余裕を持たせる
+      setAutoScroll(isAtBottom)
+    }
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -157,11 +182,31 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     }
   }, [roomId, username, password])
 
+  // メッセージが更新されたときの処理
   useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight
+    const newMessageCount = messages.length
+    const hasNewMessages = newMessageCount > lastMessageCountRef.current
+    
+    if (hasNewMessages) {
+      // チャットが非表示の場合、未読カウントを増やす
+      if (!showChat) {
+        setUnreadMessages(prev => prev + (newMessageCount - lastMessageCountRef.current))
+      }
+      
+      // 自動スクロール
+      setTimeout(scrollToBottom, 100)
     }
-  }, [messages])
+    
+    lastMessageCountRef.current = newMessageCount
+  }, [messages, showChat, scrollToBottom])
+
+  // チャットを開いたときに未読カウントをリセット
+  useEffect(() => {
+    if (showChat) {
+      setUnreadMessages(0)
+      setTimeout(scrollToBottom, 100)
+    }
+  }, [showChat, scrollToBottom])
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
@@ -203,8 +248,19 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     try {
       await sendChatMessage(roomId, currentUserId, username, chatMessage.trim(), currentUser.color)
       setChatMessage("")
+      // 送信後にフォーカスを入力フィールドに戻す
+      if (chatInputRef.current) {
+        chatInputRef.current.focus()
+      }
     } catch (error) {
       console.error("Error sending message:", error)
+    }
+  }
+
+  const handleChatMessageKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage(e)
     }
   }
 
@@ -240,6 +296,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     if (isJoined) {
       await clearRoomMessages(roomId)
     }
+  }
+
+  const toggleChatExpanded = () => {
+    setChatExpanded(!chatExpanded)
+    setTimeout(scrollToBottom, 100)
   }
 
   const otherUsers = room ? Object.values(room.users).filter((user) => user.id !== currentUserId) : []
@@ -288,9 +349,22 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant={showChat ? "default" : "outline"} size="sm" onClick={() => setShowChat(!showChat)}>
+            <Button 
+              variant={showChat ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setShowChat(!showChat)}
+              className="relative"
+            >
               <MessageSquare className="w-4 h-4" />
               チャット
+              {unreadMessages > 0 && !showChat && (
+                <Badge 
+                  variant="destructive" 
+                  className="absolute -top-2 -right-2 px-1 py-0 text-xs min-w-[20px] h-5 flex items-center justify-center"
+                >
+                  {unreadMessages > 99 ? '99+' : unreadMessages}
+                </Badge>
+              )}
             </Button>
             <Button variant="outline" size="sm" onClick={copyRoomLink}>
               {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -402,53 +476,102 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
         <div className="flex-1 flex flex-col gap-4">
           {/* チャットエリア */}
           {showChat && (
-            <Card className="h-64">
+            <Card className={`transition-all duration-300 ${chatExpanded ? 'h-96' : 'h-64'}`}>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm">チャット</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col h-full">
-                <ScrollArea className="flex-1 mb-4" ref={chatScrollRef}>
-                  <div className="space-y-2">
-                    {messages.map((message, index) => (
-                      <div key={message.id || `message-${index}`} className="text-sm">
-                        {message.userId === "system" ? (
-                          <div className="text-center text-gray-500 italic">{message.text}</div>
-                        ) : (
-                          <div className="flex items-start gap-2">
-                            <div
-                              className="w-5 h-5 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 mt-0.5"
-                              style={{ backgroundColor: message.color }}
-                            >
-                              {message.username ? message.username.charAt(0).toUpperCase() : "?"}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium" style={{ color: message.color }}>
-                                  {message.username || "Unknown"}
-                                </span>
-                                <span className="text-xs text-gray-400">
-                                  {new Date(message.timestamp).toLocaleTimeString("ja-JP", {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  })}
-                                </span>
-                              </div>
-                              <div className="whitespace-pre-wrap">{message.text}</div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm">チャット</CardTitle>
+                  <div className="flex items-center gap-2">
+                    {!autoScroll && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={scrollToBottom}
+                        className="text-xs"
+                      >
+                        最新へ
+                      </Button>
+                    )}
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={toggleChatExpanded}
+                    >
+                      {chatExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                    </Button>
                   </div>
-                </ScrollArea>
-                <form onSubmit={handleSendMessage} className="flex gap-2">
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-col h-full p-4 pt-0">
+                <div 
+                  className="flex-1 overflow-y-auto mb-4 pr-2"
+                  ref={chatScrollRef}
+                  onScroll={handleChatScroll}
+                  style={{ 
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: '#cbd5e1 #f1f5f9'
+                  }}
+                >
+                  <div className="space-y-3">
+                    {messages.length === 0 ? (
+                      <div className="text-center text-gray-500 py-8">
+                        <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">まだメッセージがありません</p>
+                        <p className="text-xs">最初のメッセージを送信しましょう</p>
+                      </div>
+                    ) : (
+                      messages.map((message, index) => (
+                        <div key={message.id || `message-${index}`} className="text-sm">
+                          {message.userId === "system" ? (
+                            <div className="text-center text-gray-500 italic py-2 border-l-2 border-gray-300 pl-3 bg-gray-50 rounded">
+                              {message.text}
+                            </div>
+                          ) : (
+                            <div className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors">
+                              <div
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 mt-1"
+                                style={{ backgroundColor: message.color }}
+                              >
+                                {message.username ? message.username.charAt(0).toUpperCase() : "?"}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium text-sm" style={{ color: message.color }}>
+                                    {message.username || "Unknown"}
+                                  </span>
+                                  <span className="text-xs text-gray-400">
+                                    {new Date(message.timestamp).toLocaleTimeString("ja-JP", {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+                                <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">
+                                  {message.text}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                <form onSubmit={handleSendMessage} className="flex gap-2 border-t pt-4">
                   <Input
+                    ref={chatInputRef}
                     value={chatMessage}
                     onChange={(e) => setChatMessage(e.target.value)}
-                    placeholder="メッセージを入力..."
+                    onKeyDown={handleChatMessageKeyDown}
+                    placeholder="メッセージを入力... (Enter: 送信)"
                     className="flex-1"
+                    autoComplete="off"
                   />
-                  <Button type="submit" size="sm" disabled={!chatMessage.trim()}>
+                  <Button 
+                    type="submit" 
+                    size="sm" 
+                    disabled={!chatMessage.trim()}
+                    className="px-4"
+                  >
                     <Send className="w-4 h-4" />
                   </Button>
                 </form>
