@@ -331,7 +331,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b px-4 py-3">
+      <header className="bg-white border-b px-4 py-3 flex-shrink-0">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div>
@@ -406,13 +406,13 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
         </div>
       </header>
 
-      <div className="flex-1 flex max-w-6xl mx-auto w-full p-4 gap-4">
+      <div className="flex-1 flex max-w-6xl mx-auto w-full p-4 gap-4 overflow-hidden">
         {/* 参加者一覧 */}
-        <Card className="w-80">
-          <CardHeader>
+        <Card className="w-80 flex-shrink-0 flex flex-col">
+          <CardHeader className="flex-shrink-0">
             <CardTitle className="text-sm">参加者 ({room ? Object.keys(room.users).length : 0})</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 overflow-y-auto">
             <div className="space-y-2">
               {/* 自分 */}
               <div className="flex items-center gap-2 p-2 bg-blue-50 rounded">
@@ -473,11 +473,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
         </Card>
 
         {/* メインエリア */}
-        <div className="flex-1 flex flex-col gap-4">
+        <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-hidden">
           {/* チャットエリア */}
           {showChat && (
-            <Card className={`transition-all duration-300 ${chatExpanded ? 'h-96' : 'h-64'}`}>
-              <CardHeader className="pb-2">
+            <Card className={`flex-shrink-0 ${chatExpanded ? 'h-96' : 'h-64'} flex flex-col`}>
+              <CardHeader className="flex-shrink-0 pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm">チャット</CardTitle>
                   <div className="flex items-center gap-2">
@@ -501,7 +501,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="flex flex-col h-full p-4 pt-0">
+              <CardContent className="flex-1 flex flex-col p-4 pt-0 min-h-0">
                 <div 
                   className="flex-1 overflow-y-auto mb-4 pr-2"
                   ref={chatScrollRef}
@@ -556,25 +556,27 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                     )}
                   </div>
                 </div>
-                <form onSubmit={handleSendMessage} className="flex gap-2 border-t pt-4">
-                  <Input
-                    ref={chatInputRef}
-                    value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
-                    onKeyDown={handleChatMessageKeyDown}
-                    placeholder="メッセージを入力... (Enter: 送信)"
-                    className="flex-1"
-                    autoComplete="off"
-                  />
-                  <Button 
-                    type="submit" 
-                    size="sm" 
-                    disabled={!chatMessage.trim()}
-                    className="px-4"
-                  >
-                    <Send className="w-4 h-4" />
-                  </Button>
-                </form>
+                <div className="flex-shrink-0 border-t pt-4">
+                  <form onSubmit={handleSendMessage} className="flex gap-2">
+                    <Input
+                      ref={chatInputRef}
+                      value={chatMessage}
+                      onChange={(e) => setChatMessage(e.target.value)}
+                      onKeyDown={handleChatMessageKeyDown}
+                      placeholder="メッセージを入力... (Enter: 送信)"
+                      className="flex-1"
+                      autoComplete="off"
+                    />
+                    <Button 
+                      type="submit" 
+                      size="sm" 
+                      disabled={!chatMessage.trim()}
+                      className="px-4"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </form>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -582,11 +584,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
           {/* 他の参加者の入力表示 */}
           {otherUsers.length > 0 && (
             <div
-              className="grid gap-4"
+              className="flex-shrink-0 grid gap-4"
               style={{ gridTemplateColumns: `repeat(${Math.min(otherUsers.length, 2)}, 1fr)` }}
             >
               {otherUsers.slice(0, 4).map((user, index) => (
-                <Card key={user.id || `user-${index}`}>
+                <Card key={user.id || `user-${index}`} className="min-h-0">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
                       <div
@@ -620,8 +622,8 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
           )}
 
           {/* 自分の入力エリア */}
-          <Card className="flex-1">
-            <CardHeader>
+          <Card className="flex-1 flex flex-col min-h-0">
+            <CardHeader className="flex-shrink-0">
               <CardTitle className="text-sm flex items-center gap-2">
                 <div
                   className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold"
@@ -637,7 +639,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                 )}
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 flex flex-col min-h-0">
               <textarea
                 ref={textareaRef}
                 value={currentText}
@@ -647,10 +649,10 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                 onKeyDown={handleKeyDown}
                 placeholder={isMuted ? "ミュート中です" : "ここに入力してください..."}
                 disabled={isMuted}
-                className="w-full min-h-[300px] p-4 text-base leading-relaxed resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                className="flex-1 w-full p-4 text-base leading-relaxed resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 min-h-[200px]"
                 autoFocus
               />
-              <div className="mt-2 text-sm text-gray-500">
+              <div className="flex-shrink-0 mt-2 text-sm text-gray-500">
                 {isMuted
                   ? "ミュート中 - 他の参加者に文字が表示されません"
                   : "入力中の文字がリアルタイムで他の参加者に表示されます"}
