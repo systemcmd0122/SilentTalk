@@ -67,7 +67,6 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   const [isJoined, setIsJoined] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const [unreadMessages, setUnreadMessages] = useState(0)
-  const [isKicked, setIsKicked] = useState(false)
   const router = useRouter()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -78,27 +77,9 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
 
   const currentUser = room && currentUserId ? room.users[currentUserId] : null
 
-  // キックされたユーザーを強制的に退出させる関数
-  const forceLeaveRoom = useCallback(async () => {
-    if (currentUserId) {
-      try {
-        await leaveRoom(roomId, currentUserId, username)
-      } catch (error) {
-        console.error("Error leaving room:", error)
-      }
-    }
-    setIsJoined(false)
-    setIsKicked(true)
-    
-    // 少し遅延してからホーム画面に遷移
-    setTimeout(() => {
-      router.push("/")
-    }, 1500)
-  }, [roomId, currentUserId, username, router])
-
   const updateTypingState = useCallback(
     async (text: string, composing: boolean) => {
-      if (!currentUserId || isMuted || !isJoined || isKicked) return
+      if (!currentUserId || isMuted || !isJoined) return
 
       try {
         await updateTyping(roomId, currentUserId, composing ? "" : text, composing ? text : "")
@@ -106,7 +87,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
         console.error("Error updating typing state:", error)
       }
     },
-    [roomId, currentUserId, isMuted, isJoined, isKicked],
+    [roomId, currentUserId, isMuted, isJoined],
   )
 
   const debouncedUpdate = useCallback(
@@ -139,40 +120,18 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     }
   }, [])
 
-  // キックイベントの監視
   useEffect(() => {
-    const handleUserKicked = (event: CustomEvent) => {
-      const { userId: kickedUserId, username: kickedUsername } = event.detail
-      
-      // 自分がキックされた場合
-      if (kickedUserId === currentUserId || kickedUsername === username) {
-        setError("ルームからキックされました")
-        forceLeaveRoom()
-      }
-    }
-
-    window.addEventListener("userKicked", handleUserKicked as EventListener)
-    
-    return () => {
-      window.removeEventListener("userKicked", handleUserKicked as EventListener)
-    }
-  }, [currentUserId, username, forceLeaveRoom])
-
-  // ルームの初期化とリスナー設定
-  useEffect(() => {
-    if (isKicked) return
-
     let mounted = true
     let roomUnsubscribe: (() => void) | null = null
     let messagesUnsubscribe: (() => void) | null = null
     let joinedUserId: string | null = null
 
     const initializeRoom = async () => {
-      if (!mounted || isKicked) return
+      if (!mounted) return
 
       try {
         const result = await joinRoom(roomId, username, password)
-        if (!mounted || isKicked) return
+        if (!mounted) return
 
         if (result.success && result.userId) {
           setCurrentUserId(result.userId)
@@ -184,7 +143,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
           setLoading(false)
         }
       } catch (error) {
-        if (!mounted || isKicked) return
+        if (!mounted) return
         console.error("Error joining room:", error)
         setError("ルームへの参加に失敗しました")
         setLoading(false)
@@ -193,28 +152,12 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
 
     // リスナーを設定
     roomUnsubscribe = listenToRoom(roomId, (roomData) => {
-      if (!mounted || isKicked) return
-      
-      // 自分がルームから削除されているかチェック
-      if (roomData && currentUserId && !roomData.users[currentUserId]) {
-        // キックされたユーザーリストをチェック
-        const kickedUsers = roomData.kickedUsers || {}
-        const isUserKicked = Object.values(kickedUsers).some(
-          (kicked: any) => kicked.username === username || kicked.userId === currentUserId
-        )
-        
-        if (isUserKicked) {
-          setError("ルームからキックされました")
-          forceLeaveRoom()
-          return
-        }
-      }
-      
+      if (!mounted) return
       setRoom(roomData)
     })
 
     messagesUnsubscribe = listenToMessages(roomId, (messagesData) => {
-      if (!mounted || isKicked) return
+      if (!mounted) return
       setMessages(messagesData)
     })
 
@@ -225,7 +168,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     cleanupRef.current = () => {
       if (roomUnsubscribe) roomUnsubscribe()
       if (messagesUnsubscribe) messagesUnsubscribe()
-      if (joinedUserId && !isKicked) {
+      if (joinedUserId) {
         leaveRoom(roomId, joinedUserId, username)
       }
     }
@@ -236,12 +179,10 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
         cleanupRef.current()
       }
     }
-  }, [roomId, username, password, isKicked, currentUserId, forceLeaveRoom])
+  }, [roomId, username, password])
 
   // メッセージが更新されたときの処理
   useEffect(() => {
-    if (isKicked) return
-    
     const newMessageCount = messages.length
     const hasNewMessages = newMessageCount > lastMessageCountRef.current
     
@@ -256,51 +197,44 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     }
     
     lastMessageCountRef.current = newMessageCount
-  }, [messages, showChat, scrollToBottom, isKicked])
+  }, [messages, showChat, scrollToBottom])
 
   // チャットを開いたときに未読カウントをリセット
   useEffect(() => {
-    if (showChat && !isKicked) {
+    if (showChat) {
       setUnreadMessages(0)
       setTimeout(scrollToBottom, 100)
     }
-  }, [showChat, scrollToBottom, isKicked])
+  }, [showChat, scrollToBottom])
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    if (isKicked) return
-    
     const text = e.target.value
     setCurrentText(text)
 
-    if (!isMuted && isJoined && !isKicked) {
+    if (!isMuted && isJoined) {
       debouncedUpdate(text, isComposing)
     }
   }
 
   const handleCompositionStart = () => {
-    if (isKicked) return
     setIsComposing(true)
   }
 
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
-    if (isKicked) return
-    
     setIsComposing(false)
     const text = e.currentTarget.value
     setCurrentText(text)
 
-    if (!isMuted && isJoined && !isKicked) {
+    if (!isMuted && isJoined) {
       debouncedUpdate(text, false)
     }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (isKicked) return
-    
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       setCurrentText("")
-      if (!isMuted && isJoined && !isKicked) {
+      if (!isMuted && isJoined) {
         updateTypingState("", false)
       }
     }
@@ -308,7 +242,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!chatMessage.trim() || !currentUserId || !currentUser || !isJoined || isKicked) return
+    if (!chatMessage.trim() || !currentUserId || !currentUser || !isJoined) return
 
     try {
       await sendChatMessage(roomId, currentUserId, username, chatMessage.trim(), currentUser.color)
@@ -323,8 +257,6 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   }
 
   const handleChatMessageKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (isKicked) return
-    
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage(e)
@@ -332,7 +264,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   }
 
   const leaveRoomHandler = async () => {
-    if (currentUserId && isJoined && !isKicked) {
+    if (currentUserId && isJoined) {
       await leaveRoom(roomId, currentUserId, username)
       setIsJoined(false)
     }
@@ -340,17 +272,13 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   }
 
   const toggleMute = () => {
-    if (isKicked) return
-    
     setIsMuted(!isMuted)
-    if (!isMuted && isJoined && !isKicked) {
+    if (!isMuted && isJoined) {
       updateTypingState("", false)
     }
   }
 
   const copyRoomLink = () => {
-    if (isKicked) return
-    
     const link = `${window.location.origin}/room/${roomId}`
     navigator.clipboard.writeText(link)
     setCopied(true)
@@ -358,20 +286,18 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   }
 
   const handleKickUser = async (userId: string, targetUsername: string) => {
-    if (currentUserId && userId !== currentUserId && isJoined && !isKicked) {
+    if (currentUserId && userId !== currentUserId && isJoined) {
       await kickUser(roomId, userId, targetUsername)
     }
   }
 
   const handleClearMessages = async () => {
-    if (isJoined && !isKicked) {
+    if (isJoined) {
       await clearRoomMessages(roomId)
     }
   }
 
   const toggleChatExpanded = () => {
-    if (isKicked) return
-    
     setChatExpanded(!chatExpanded)
     setTimeout(scrollToBottom, 100)
   }
@@ -390,16 +316,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     )
   }
 
-  if (error || isKicked) {
+  if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-500 mb-4">{error}</p>
-          {isKicked && (
-            <p className="text-sm text-gray-600 mb-4">
-              自動的にホーム画面に戻ります...
-            </p>
-          )}
           <Button onClick={() => router.push("/")}>ホームに戻る</Button>
         </div>
       </div>
