@@ -26,7 +26,6 @@ import {
   Send,
   MessageSquare,
   Settings,
-  UserX,
   Trash2,
   Crown,
   ChevronDown,
@@ -39,7 +38,6 @@ import {
   listenToRoom,
   listenToMessages,
   sendChatMessage,
-  kickUser,
   clearRoomMessages,
   type Room,
   type ChatMessage,
@@ -285,12 +283,6 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleKickUser = async (userId: string, targetUsername: string) => {
-    if (currentUserId && userId !== currentUserId && isJoined) {
-      await kickUser(roomId, userId, targetUsername)
-    }
-  }
-
   const handleClearMessages = async () => {
     if (isJoined) {
       await clearRoomMessages(roomId)
@@ -434,7 +426,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
 
               {/* 他の参加者 */}
               {otherUsers.map((user, index) => (
-                <div key={user.id || `other-user-${index}`} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded group">
+                <div key={user.id || `other-user-${index}`} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded">
                   <div
                     className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold"
                     style={{ backgroundColor: user.color }}
@@ -446,16 +438,6 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                     <Badge variant="outline" className="text-xs">
                       入力中
                     </Badge>
-                  )}
-                  {isRoomOwner && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleKickUser(user.id, user.username || "Unknown")}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <UserX className="w-3 h-3" />
-                    </Button>
                   )}
                 </div>
               ))}

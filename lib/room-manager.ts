@@ -10,7 +10,7 @@ export interface User {
   joinedAt: number
   isTyping: boolean
   color: string
-  status: "active" | "kicked" | "disconnected"
+  status: "active" | "disconnected"
 }
 
 export interface Room {
@@ -22,7 +22,6 @@ export interface Room {
   messageCount: number
   isPrivate: boolean
   password?: string
-  kickedUsers: { [userId: string]: { username: string; kickedAt: number } }
 }
 
 export interface ChatMessage {
@@ -32,7 +31,7 @@ export interface ChatMessage {
   text: string
   timestamp: number
   color: string
-  type?: "join" | "leave" | "system" | "kick"
+  type?: "join" | "leave" | "system"
 }
 
 const USER_COLORS = [
@@ -55,9 +54,6 @@ const joiningUsers = new Set<string>()
 // タイピング状態のクリーンアップ用タイマー
 const typingTimeouts = new Map<string, NodeJS.Timeout>()
 
-// キックされたユーザーのセッション監視
-const kickedUserWatchers = new Map<string, () => void>()
-
 export const generateUserId = (): string => {
   return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
@@ -74,22 +70,6 @@ export const joinRoom = async (
 ): Promise<{ success: boolean; userId?: string; error?: string }> => {
   try {
     const sessionKey = `${roomId}_${username}`
-    
-    // キックされたユーザーかどうかをチェック
-    if (!isRoomCreator) {
-      const roomRef = ref(rtdb, `rooms/${roomId}`)
-      const roomSnapshot = await get(roomRef)
-      const roomData = roomSnapshot.val()
-      
-      if (roomData?.kickedUsers) {
-        const kickedUser = Object.values(roomData.kickedUsers).find(
-          (kicked: any) => kicked.username === username
-        )
-        if (kickedUser) {
-          return { success: false, error: "このルームからキックされています" }
-        }
-      }
-    }
     
     if (!isRoomCreator && joiningUsers.has(sessionKey)) {
       return { success: false, error: "既に参加処理中です" }
@@ -148,9 +128,6 @@ export const joinRoom = async (
       const disconnectRef = onDisconnect(userRef)
       await disconnectRef.remove()
 
-      // キックされたユーザーの監視を開始
-      startKickWatcher(roomId, userId, username)
-
       // ルームの最終活動時刻を更新
       await update(ref(rtdb, `rooms/${roomId}`), {
         lastActivity: Date.now()
@@ -171,49 +148,6 @@ export const joinRoom = async (
   }
 }
 
-// キックされたユーザーの監視を開始
-const startKickWatcher = (roomId: string, userId: string, username: string) => {
-  const watcherKey = `${roomId}_${userId}`
-  
-  // 既存のウォッチャーがある場合は削除
-  if (kickedUserWatchers.has(watcherKey)) {
-    kickedUserWatchers.get(watcherKey)!()
-    kickedUserWatchers.delete(watcherKey)
-  }
-
-  const userRef = ref(rtdb, `rooms/${roomId}/users/${userId}`)
-  const kickedUsersRef = ref(rtdb, `rooms/${roomId}/kickedUsers`)
-
-  const handleUserStatus = (snapshot: any) => {
-    const userData = snapshot.val()
-    if (!userData) {
-      // ユーザーが削除された場合、キックされたかどうかを確認
-      get(kickedUsersRef).then((kickedSnapshot) => {
-        const kickedData = kickedSnapshot.val()
-        if (kickedData) {
-          const isKicked = Object.values(kickedData).some(
-            (kicked: any) => kicked.username === username
-          )
-          if (isKicked) {
-            // キックされたユーザーに通知
-            window.dispatchEvent(new CustomEvent('userKicked', { 
-              detail: { roomId, userId, username } 
-            }))
-          }
-        }
-      })
-    }
-  }
-
-  onValue(userRef, handleUserStatus)
-  
-  const cleanup = () => {
-    off(userRef, "value", handleUserStatus)
-  }
-  
-  kickedUserWatchers.set(watcherKey, cleanup)
-}
-
 export const cleanupUser = async (roomId: string, userId: string) => {
   try {
     const userRef = ref(rtdb, `rooms/${roomId}/users/${userId}`)
@@ -224,13 +158,6 @@ export const cleanupUser = async (roomId: string, userId: string) => {
     if (typingTimeouts.has(typingKey)) {
       clearTimeout(typingTimeouts.get(typingKey)!)
       typingTimeouts.delete(typingKey)
-    }
-    
-    // キックウォッチャーのクリーンアップ
-    const watcherKey = `${roomId}_${userId}`
-    if (kickedUserWatchers.has(watcherKey)) {
-      kickedUserWatchers.get(watcherKey)!()
-      kickedUserWatchers.delete(watcherKey)
     }
   } catch (error) {
     console.error("Error cleaning up user:", error)
@@ -358,7 +285,7 @@ export const sendChatMessage = async (
   }
 }
 
-export const addSystemMessage = async (roomId: string, text: string, type: "join" | "leave" | "system" | "kick") => {
+export const addSystemMessage = async (roomId: string, text: string, type: "join" | "leave" | "system") => {
   try {
     const messagesRef = ref(rtdb, `rooms/${roomId}/messages`)
     const newMessageRef = push(messagesRef)
@@ -394,7 +321,6 @@ export const listenToRoom = (roomId: string, callback: (room: Room | null) => vo
         messageCount: data.messageCount || 0,
         isPrivate: data.isPrivate || false,
         password: data.password,
-        kickedUsers: data.kickedUsers || {},
       })
     } else {
       callback(null)
@@ -441,7 +367,6 @@ export const createRoom = async (roomName: string, isPrivate = false, password?:
     users: {},
     messageCount: 0,
     isPrivate,
-    kickedUsers: {},
   }
 
   if (isPrivate && password) {
@@ -500,7 +425,6 @@ export const getAvailableRooms = (callback: (rooms: Room[]) => void) => {
           messageCount: roomData.messageCount || 0,
           isPrivate: roomData.isPrivate || false,
           password: roomData.password,
-          kickedUsers: roomData.kickedUsers || {},
         }))
         .filter((room) => Object.keys(room.users).length > 0)
       callback(rooms.sort((a, b) => b.lastActivity - a.lastActivity))
@@ -513,25 +437,6 @@ export const getAvailableRooms = (callback: (rooms: Room[]) => void) => {
 
   return () => {
     off(roomsRef, "value", handleRoomsData)
-  }
-}
-
-export const kickUser = async (roomId: string, userId: string, username: string) => {
-  try {
-    // キックされたユーザーのリストに追加
-    const kickedUserRef = ref(rtdb, `rooms/${roomId}/kickedUsers/${userId}`)
-    await set(kickedUserRef, {
-      username,
-      kickedAt: Date.now()
-    })
-
-    // キックメッセージを追加
-    await addSystemMessage(roomId, `${username}さんがキックされました`, "kick")
-
-    // ユーザーを削除（これによりキックされたユーザーの画面が反応する）
-    await cleanupUser(roomId, userId)
-  } catch (error) {
-    console.error("Error kicking user:", error)
   }
 }
 
@@ -550,10 +455,6 @@ export const cleanupAllSessions = () => {
   // タイピングタイムアウトのクリア
   typingTimeouts.forEach((timeout) => clearTimeout(timeout))
   typingTimeouts.clear()
-  
-  // キックウォッチャーのクリア
-  kickedUserWatchers.forEach((cleanup) => cleanup())
-  kickedUserWatchers.clear()
   
   // アクティブセッションのクリア
   activeUserSessions.clear()
