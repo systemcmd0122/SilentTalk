@@ -18,6 +18,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   LogOut,
   Users,
   Mic,
@@ -32,6 +40,7 @@ import {
   Crown,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
 } from "lucide-react"
 import {
   joinRoom,
@@ -42,8 +51,10 @@ import {
   sendChatMessage,
   kickUser,
   clearRoomMessages,
+  cleanupUser,
   type Room,
   type ChatMessage,
+  type User,
 } from "@/lib/room-manager"
 
 interface TextCallRoomProps {
@@ -68,6 +79,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   const [isJoined, setIsJoined] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const [unreadMessages, setUnreadMessages] = useState(0)
+  const [kickedDialogOpen, setKickedDialogOpen] = useState(false)
+  const [connectionLost, setConnectionLost] = useState(false)
+  const [isReconnecting, setIsReconnecting] = useState(false)
+  const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set())
+
   const router = useRouter()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -75,20 +91,126 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   const updateTimeoutRef = useRef<NodeJS.Timeout>()
   const cleanupRef = useRef<(() => void) | null>(null)
   const lastMessageCountRef = useRef(0)
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout>()
+  const typingTimeoutRef = useRef<NodeJS.Timeout>()
+  const mountedRef = useRef(true)
 
   const currentUser = room && currentUserId ? room.users[currentUserId] : null
 
+  // キックイベントリスナー
+  useEffect(() => {
+    const handleUserKicked = (event: CustomEvent) => {
+      const { userId: kickedUserId, username: kickedUsername } = event.detail
+      if (kickedUserId === currentUserId) {
+        setKickedDialogOpen(true)
+        setIsJoined(false)
+      }
+    }
+
+    window.addEventListener('userKicked', handleUserKicked as EventListener)
+    return () => {
+      window.removeEventListener('userKicked', handleUserKicked as EventListener)
+    }
+  }, [currentUserId])
+
+  // 接続状態の監視
+  useEffect(() => {
+    const handleOnline = () => {
+      if (connectionLost && isJoined) {
+        setIsReconnecting(true)
+        attemptReconnection()
+      }
+    }
+
+    const handleOffline = () => {
+      setConnectionLost(true)
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [connectionLost, isJoined])
+
+  // 再接続処理
+  const attemptReconnection = useCallback(async () => {
+    if (!mountedRef.current) return
+
+    try {
+      if (currentUserId) {
+        await cleanupUser(roomId, currentUserId)
+      }
+      
+      const result = await joinRoom(roomId, username, password)
+      if (result.success && result.userId) {
+        setCurrentUserId(result.userId)
+        setConnectionLost(false)
+        setIsReconnecting(false)
+        setError(null)
+      } else {
+        throw new Error(result.error || "再接続に失敗しました")
+      }
+    } catch (error) {
+      console.error("Reconnection failed:", error)
+      setError("接続が失われました。再接続を試行中...")
+      
+      // 5秒後に再試行
+      reconnectTimeoutRef.current = setTimeout(() => {
+        if (mountedRef.current) {
+          attemptReconnection()
+        }
+      }, 5000)
+    }
+  }, [roomId, username, password, currentUserId])
+
+  // タイピング状態の更新
   const updateTypingState = useCallback(
     async (text: string, composing: boolean) => {
-      if (!currentUserId || isMuted || !isJoined) return
+      if (!currentUserId || isMuted || !isJoined || connectionLost) return
 
       try {
         await updateTyping(roomId, currentUserId, composing ? "" : text, composing ? text : "")
+        
+        // タイピング状態のタイムアウト管理
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current)
+        }
+        
+        const isTyping = text.length > 0 || composing
+        if (isTyping) {
+          setTypingUsers(prev => new Set(prev).add(currentUserId))
+          
+          // 3秒後にタイピング状態をクリア
+          typingTimeoutRef.current = setTimeout(() => {
+            setTypingUsers(prev => {
+              const newSet = new Set(prev)
+              newSet.delete(currentUserId)
+              return newSet
+            })
+            
+            if (currentUserId && mountedRef.current) {
+              updateTyping(roomId, currentUserId, "", "").catch(console.error)
+            }
+          }, 3000)
+        } else {
+          setTypingUsers(prev => {
+            const newSet = new Set(prev)
+            newSet.delete(currentUserId)
+            return newSet
+          })
+        }
       } catch (error) {
         console.error("Error updating typing state:", error)
+        // 接続エラーの場合は接続状態をチェック
+        if (error instanceof Error && error.message.includes('permission')) {
+          setConnectionLost(true)
+        }
       }
     },
-    [roomId, currentUserId, isMuted, isJoined],
+    [roomId, currentUserId, isMuted, isJoined, connectionLost],
   )
 
   const debouncedUpdate = useCallback(
@@ -116,49 +238,83 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     if (chatScrollRef.current) {
       const scrollContainer = chatScrollRef.current
       const { scrollTop, scrollHeight, clientHeight } = scrollContainer
-      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10 // 10px の余裕を持たせる
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10
       setAutoScroll(isAtBottom)
     }
   }, [])
 
+  // ルーム初期化とリスナー設定
   useEffect(() => {
-    let mounted = true
     let roomUnsubscribe: (() => void) | null = null
     let messagesUnsubscribe: (() => void) | null = null
     let joinedUserId: string | null = null
 
     const initializeRoom = async () => {
-      if (!mounted) return
+      if (!mountedRef.current) return
 
       try {
         const result = await joinRoom(roomId, username, password)
-        if (!mounted) return
+        if (!mountedRef.current) return
 
         if (result.success && result.userId) {
           setCurrentUserId(result.userId)
           setIsJoined(true)
           joinedUserId = result.userId
           setLoading(false)
+          setError(null)
         } else {
           setError(result.error || "ルームへの参加に失敗しました")
           setLoading(false)
         }
       } catch (error) {
-        if (!mounted) return
+        if (!mountedRef.current) return
         console.error("Error joining room:", error)
         setError("ルームへの参加に失敗しました")
         setLoading(false)
       }
     }
 
-    // リスナーを設定
+    // ルームデータのリスナー
     roomUnsubscribe = listenToRoom(roomId, (roomData) => {
-      if (!mounted) return
-      setRoom(roomData)
+      if (!mountedRef.current) return
+      
+      if (roomData) {
+        setRoom(roomData)
+        setConnectionLost(false)
+        
+        // 自分がルームから削除されているかチェック
+        if (currentUserId && !roomData.users[currentUserId]) {
+          // キックされたユーザーリストをチェック
+          const kickedUser = roomData.kickedUsers && Object.values(roomData.kickedUsers).find(
+            (kicked: any) => kicked.username === username
+          )
+          
+          if (kickedUser) {
+            setKickedDialogOpen(true)
+            setIsJoined(false)
+          } else {
+            // 通常の切断の場合は再接続を試行
+            setConnectionLost(true)
+          }
+        }
+        
+        // 他のユーザーのタイピング状態を更新
+        const currentTypingUsers = new Set<string>()
+        Object.values(roomData.users).forEach((user: User) => {
+          if (user.id !== currentUserId && (user.typing || user.composing)) {
+            currentTypingUsers.add(user.id)
+          }
+        })
+        setTypingUsers(currentTypingUsers)
+      } else {
+        setRoom(null)
+        setConnectionLost(true)
+      }
     })
 
+    // メッセージのリスナー
     messagesUnsubscribe = listenToMessages(roomId, (messagesData) => {
-      if (!mounted) return
+      if (!mountedRef.current) return
       setMessages(messagesData)
     })
 
@@ -169,18 +325,17 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     cleanupRef.current = () => {
       if (roomUnsubscribe) roomUnsubscribe()
       if (messagesUnsubscribe) messagesUnsubscribe()
-      if (joinedUserId) {
+      if (joinedUserId && mountedRef.current) {
         leaveRoom(roomId, joinedUserId, username)
       }
     }
 
     return () => {
-      mounted = false
       if (cleanupRef.current) {
         cleanupRef.current()
       }
     }
-  }, [roomId, username, password])
+  }, [roomId, username, password, currentUserId])
 
   // メッセージが更新されたときの処理
   useEffect(() => {
@@ -208,11 +363,29 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     }
   }, [showChat, scrollToBottom])
 
+  // コンポーネントのアンマウント時
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+      
+      // タイムアウトのクリア
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current)
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value
     setCurrentText(text)
 
-    if (!isMuted && isJoined) {
+    if (!isMuted && isJoined && !connectionLost) {
       debouncedUpdate(text, isComposing)
     }
   }
@@ -226,7 +399,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     const text = e.currentTarget.value
     setCurrentText(text)
 
-    if (!isMuted && isJoined) {
+    if (!isMuted && isJoined && !connectionLost) {
       debouncedUpdate(text, false)
     }
   }
@@ -235,7 +408,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       setCurrentText("")
-      if (!isMuted && isJoined) {
+      if (!isMuted && isJoined && !connectionLost) {
         updateTypingState("", false)
       }
     }
@@ -243,7 +416,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!chatMessage.trim() || !currentUserId || !currentUser || !isJoined) return
+    if (!chatMessage.trim() || !currentUserId || !currentUser || !isJoined || connectionLost) return
 
     try {
       await sendChatMessage(roomId, currentUserId, username, chatMessage.trim(), currentUser.color)
@@ -254,6 +427,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
       }
     } catch (error) {
       console.error("Error sending message:", error)
+      setConnectionLost(true)
     }
   }
 
@@ -272,9 +446,14 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     router.push("/")
   }
 
+  const handleKickedDialogClose = () => {
+    setKickedDialogOpen(false)
+    router.push("/")
+  }
+
   const toggleMute = () => {
     setIsMuted(!isMuted)
-    if (!isMuted && isJoined) {
+    if (!isMuted && isJoined && !connectionLost) {
       updateTypingState("", false)
     }
   }
@@ -306,6 +485,43 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   const otherUsers = room ? Object.values(room.users).filter((user) => user.id !== currentUserId) : []
   const isRoomOwner = currentUser && room && Object.values(room.users)[0]?.id === currentUserId
 
+  // キックされたユーザーへの通知ダイアログ
+  const KickedDialog = () => (
+    <AlertDialog open={kickedDialogOpen} onOpenChange={setKickedDialogOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
+            ルームから除名されました
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            あなたはこのルームから除名されました。ルームに再参加することはできません。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogAction onClick={handleKickedDialogClose}>
+          ホームに戻る
+        </AlertDialogAction>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
+  // 接続状態の表示
+  const ConnectionStatus = () => {
+    if (connectionLost) {
+      return (
+        <div className="bg-red-100 border border-red-300 rounded-md p-3 mb-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500" />
+            <span className="text-red-700 text-sm">
+              {isReconnecting ? "再接続中..." : "接続が切断されました"}
+            </span>
+          </div>
+        </div>
+      )
+    }
+    return null
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -317,7 +533,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     )
   }
 
-  if (error) {
+  if (error && !connectionLost) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -330,6 +546,8 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
+      <KickedDialog />
+      
       {/* Header */}
       <header className="bg-white border-b px-4 py-3 flex-shrink-0">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -345,6 +563,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                   {room ? Object.keys(room.users).length : 0}人参加中
                 </span>
                 <span>あなた: {username}</span>
+                {typingUsers.size > 0 && (
+                  <span className="text-blue-500">
+                    {typingUsers.size}人が入力中
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -354,6 +577,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
               size="sm" 
               onClick={() => setShowChat(!showChat)}
               className="relative"
+              disabled={connectionLost}
             >
               <MessageSquare className="w-4 h-4" />
               チャット
@@ -366,18 +590,28 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                 </Badge>
               )}
             </Button>
-            <Button variant="outline" size="sm" onClick={copyRoomLink}>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={copyRoomLink}
+              disabled={connectionLost}
+            >
               {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               {copied ? "コピー済み" : "リンクをコピー"}
             </Button>
-            <Button variant={isMuted ? "destructive" : "outline"} size="sm" onClick={toggleMute}>
+            <Button 
+              variant={isMuted ? "destructive" : "outline"} 
+              size="sm" 
+              onClick={toggleMute}
+              disabled={connectionLost}
+            >
               {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
               {isMuted ? "ミュート中" : "ミュート"}
             </Button>
             {isRoomOwner && (
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" size="sm" disabled={connectionLost}>
                     <Settings className="w-4 h-4" />
                   </Button>
                 </DialogTrigger>
@@ -413,6 +647,7 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
             <CardTitle className="text-sm">参加者 ({room ? Object.keys(room.users).length : 0})</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 overflow-y-auto">
+            <ConnectionStatus />
             <div className="space-y-2">
               {/* 自分 */}
               <div className="flex items-center gap-2 p-2 bg-blue-50 rounded">
@@ -429,6 +664,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                     ミュート
                   </Badge>
                 )}
+                {connectionLost && (
+                  <Badge variant="destructive" className="text-xs">
+                    切断
+                  </Badge>
+                )}
               </div>
 
               <Separator />
@@ -443,12 +683,12 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                     {user.username ? user.username.charAt(0).toUpperCase() : "?"}
                   </div>
                   <span className="text-sm flex-1">{user.username || "Unknown"}</span>
-                  {(user.typing || user.composing) && (
+                  {(user.typing || user.composing || typingUsers.has(user.id)) && (
                     <Badge variant="outline" className="text-xs">
                       入力中
                     </Badge>
                   )}
-                  {isRoomOwner && (
+                  {isRoomOwner && !connectionLost && (
                     <Button
                       variant="ghost"
                       size="sm"

@@ -10,6 +10,7 @@ export interface User {
   joinedAt: number
   isTyping: boolean
   color: string
+  status: "active" | "kicked" | "disconnected"
 }
 
 export interface Room {
@@ -21,6 +22,7 @@ export interface Room {
   messageCount: number
   isPrivate: boolean
   password?: string
+  kickedUsers: { [userId: string]: { username: string; kickedAt: number } }
 }
 
 export interface ChatMessage {
@@ -30,7 +32,7 @@ export interface ChatMessage {
   text: string
   timestamp: number
   color: string
-  type?: "join" | "leave" | "system"
+  type?: "join" | "leave" | "system" | "kick"
 }
 
 const USER_COLORS = [
@@ -44,11 +46,17 @@ const USER_COLORS = [
   "#84CC16", // lime
 ]
 
-// アクティブなユーザーセッションを追跡（より厳密な管理）
-const activeUserSessions = new Map<string, { userId: string; timestamp: number }>()
+// アクティブなユーザーセッションを追跡
+const activeUserSessions = new Map<string, { userId: string; timestamp: number; roomId: string }>()
 
 // 重複参加を防ぐためのフラグ
 const joiningUsers = new Set<string>()
+
+// タイピング状態のクリーンアップ用タイマー
+const typingTimeouts = new Map<string, NodeJS.Timeout>()
+
+// キックされたユーザーのセッション監視
+const kickedUserWatchers = new Map<string, () => void>()
 
 export const generateUserId = (): string => {
   return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -65,29 +73,39 @@ export const joinRoom = async (
   isRoomCreator: boolean = false
 ): Promise<{ success: boolean; userId?: string; error?: string }> => {
   try {
-    // セッションキーを生成してユーザーの重複を防ぐ
     const sessionKey = `${roomId}_${username}`
     
-    // 新規ルーム作成者の場合は重複チェックをスキップ
+    // キックされたユーザーかどうかをチェック
     if (!isRoomCreator) {
-      // 既に参加処理中の場合はエラーを返す
-      if (joiningUsers.has(sessionKey)) {
-        return { success: false, error: "既に参加処理中です" }
+      const roomRef = ref(rtdb, `rooms/${roomId}`)
+      const roomSnapshot = await get(roomRef)
+      const roomData = roomSnapshot.val()
+      
+      if (roomData?.kickedUsers) {
+        const kickedUser = Object.values(roomData.kickedUsers).find(
+          (kicked: any) => kicked.username === username
+        )
+        if (kickedUser) {
+          return { success: false, error: "このルームからキックされています" }
+        }
       }
     }
     
-    // 参加処理開始をマーク
+    if (!isRoomCreator && joiningUsers.has(sessionKey)) {
+      return { success: false, error: "既に参加処理中です" }
+    }
+    
     joiningUsers.add(sessionKey)
     
     try {
       // 既存のセッションがある場合は先に削除
       if (activeUserSessions.has(sessionKey)) {
         const existingSession = activeUserSessions.get(sessionKey)!
-        await cleanupUser(roomId, existingSession.userId)
+        await cleanupUser(existingSession.roomId, existingSession.userId)
         activeUserSessions.delete(sessionKey)
       }
 
-      // Check if room exists and password is correct
+      // ルームの存在確認とパスワードチェック
       const roomRef = ref(rtdb, `rooms/${roomId}`)
       const roomSnapshot = await get(roomRef)
 
@@ -101,7 +119,6 @@ export const joinRoom = async (
         const existingUsers = Object.values(roomData.users) as User[]
         const duplicateUsers = existingUsers.filter(user => user.username === username)
         
-        // 重複するユーザーを全て削除
         for (const duplicateUser of duplicateUsers) {
           await cleanupUser(roomId, duplicateUser.id)
         }
@@ -119,28 +136,31 @@ export const joinRoom = async (
         joinedAt: Date.now(),
         isTyping: false,
         color: generateUserColor(),
+        status: "active",
       }
 
       // セッションを追跡
-      activeUserSessions.set(sessionKey, { userId, timestamp: Date.now() })
+      activeUserSessions.set(sessionKey, { userId, timestamp: Date.now(), roomId })
 
       await set(userRef, userData)
 
-      // Set up disconnect handler to remove user when they leave
+      // 切断時の処理を設定
       const disconnectRef = onDisconnect(userRef)
       await disconnectRef.remove()
 
-      // Update room last activity
+      // キックされたユーザーの監視を開始
+      startKickWatcher(roomId, userId, username)
+
+      // ルームの最終活動時刻を更新
       await update(ref(rtdb, `rooms/${roomId}`), {
         lastActivity: Date.now()
       })
 
-      // Add join message
+      // 参加メッセージを追加
       await addSystemMessage(roomId, `${username}さんが参加しました`, "join")
 
       return { success: true, userId }
     } finally {
-      // 参加処理完了をマーク
       joiningUsers.delete(sessionKey)
     }
   } catch (error) {
@@ -151,10 +171,67 @@ export const joinRoom = async (
   }
 }
 
+// キックされたユーザーの監視を開始
+const startKickWatcher = (roomId: string, userId: string, username: string) => {
+  const watcherKey = `${roomId}_${userId}`
+  
+  // 既存のウォッチャーがある場合は削除
+  if (kickedUserWatchers.has(watcherKey)) {
+    kickedUserWatchers.get(watcherKey)!()
+    kickedUserWatchers.delete(watcherKey)
+  }
+
+  const userRef = ref(rtdb, `rooms/${roomId}/users/${userId}`)
+  const kickedUsersRef = ref(rtdb, `rooms/${roomId}/kickedUsers`)
+
+  const handleUserStatus = (snapshot: any) => {
+    const userData = snapshot.val()
+    if (!userData) {
+      // ユーザーが削除された場合、キックされたかどうかを確認
+      get(kickedUsersRef).then((kickedSnapshot) => {
+        const kickedData = kickedSnapshot.val()
+        if (kickedData) {
+          const isKicked = Object.values(kickedData).some(
+            (kicked: any) => kicked.username === username
+          )
+          if (isKicked) {
+            // キックされたユーザーに通知
+            window.dispatchEvent(new CustomEvent('userKicked', { 
+              detail: { roomId, userId, username } 
+            }))
+          }
+        }
+      })
+    }
+  }
+
+  onValue(userRef, handleUserStatus)
+  
+  const cleanup = () => {
+    off(userRef, "value", handleUserStatus)
+  }
+  
+  kickedUserWatchers.set(watcherKey, cleanup)
+}
+
 export const cleanupUser = async (roomId: string, userId: string) => {
   try {
     const userRef = ref(rtdb, `rooms/${roomId}/users/${userId}`)
     await remove(userRef)
+    
+    // タイピング状態のクリーンアップ
+    const typingKey = `${roomId}_${userId}`
+    if (typingTimeouts.has(typingKey)) {
+      clearTimeout(typingTimeouts.get(typingKey)!)
+      typingTimeouts.delete(typingKey)
+    }
+    
+    // キックウォッチャーのクリーンアップ
+    const watcherKey = `${roomId}_${userId}`
+    if (kickedUserWatchers.has(watcherKey)) {
+      kickedUserWatchers.get(watcherKey)!()
+      kickedUserWatchers.delete(watcherKey)
+    }
   } catch (error) {
     console.error("Error cleaning up user:", error)
   }
@@ -162,18 +239,20 @@ export const cleanupUser = async (roomId: string, userId: string) => {
 
 export const leaveRoom = async (roomId: string, userId: string, username: string) => {
   try {
-    // セッションから削除
     const sessionKey = `${roomId}_${username}`
     activeUserSessions.delete(sessionKey)
 
-    // Remove user
+    // ユーザーを削除
     const userRef = ref(rtdb, `rooms/${roomId}/users/${userId}`)
     await remove(userRef)
 
-    // Add leave message
+    // 退出メッセージを追加
     await addSystemMessage(roomId, `${username}さんが退出しました`, "leave")
 
-    // Check if room is empty and delete if so
+    // クリーンアップ
+    await cleanupUser(roomId, userId)
+
+    // 空のルームを削除
     setTimeout(() => checkAndDeleteEmptyRoom(roomId), 1000)
   } catch (error) {
     console.error("Error leaving room:", error)
@@ -198,12 +277,41 @@ export const checkAndDeleteEmptyRoom = async (roomId: string) => {
 export const updateTyping = async (roomId: string, userId: string, typing: string, composing: string) => {
   try {
     const userRef = ref(rtdb, `rooms/${roomId}/users/${userId}`)
+    const isTyping = typing.length > 0 || composing.length > 0
+    
     await update(userRef, {
       typing,
       composing,
       lastUpdate: Date.now(),
-      isTyping: typing.length > 0 || composing.length > 0,
+      isTyping,
+      status: "active"
     })
+
+    // タイピング状態のタイムアウト管理
+    const typingKey = `${roomId}_${userId}`
+    
+    if (typingTimeouts.has(typingKey)) {
+      clearTimeout(typingTimeouts.get(typingKey)!)
+    }
+    
+    if (isTyping) {
+      // 5秒間入力がない場合、タイピング状態をクリア
+      const timeout = setTimeout(async () => {
+        try {
+          await update(userRef, {
+            typing: "",
+            composing: "",
+            isTyping: false,
+            lastUpdate: Date.now()
+          })
+        } catch (error) {
+          console.error("Error clearing typing state:", error)
+        }
+        typingTimeouts.delete(typingKey)
+      }, 5000)
+      
+      typingTimeouts.set(typingKey, timeout)
+    }
   } catch (error) {
     console.error("Error updating typing:", error)
   }
@@ -231,17 +339,26 @@ export const sendChatMessage = async (
 
     await set(newMessageRef, message)
 
-    // Update room activity
+    // タイピング状態をクリア
+    const userRef = ref(rtdb, `rooms/${roomId}/users/${userId}`)
+    await update(userRef, {
+      typing: "",
+      composing: "",
+      isTyping: false,
+      lastUpdate: Date.now()
+    })
+
+    // ルームの活動を更新
     await update(ref(rtdb, `rooms/${roomId}`), {
       lastActivity: Date.now(),
-      messageCount: Date.now() // Use timestamp as increment
+      messageCount: Date.now()
     })
   } catch (error) {
     console.error("Error sending message:", error)
   }
 }
 
-export const addSystemMessage = async (roomId: string, text: string, type: "join" | "leave" | "system") => {
+export const addSystemMessage = async (roomId: string, text: string, type: "join" | "leave" | "system" | "kick") => {
   try {
     const messagesRef = ref(rtdb, `rooms/${roomId}/messages`)
     const newMessageRef = push(messagesRef)
@@ -277,6 +394,7 @@ export const listenToRoom = (roomId: string, callback: (room: Room | null) => vo
         messageCount: data.messageCount || 0,
         isPrivate: data.isPrivate || false,
         password: data.password,
+        kickedUsers: data.kickedUsers || {},
       })
     } else {
       callback(null)
@@ -298,7 +416,7 @@ export const listenToMessages = (roomId: string, callback: (messages: ChatMessag
     if (data) {
       const messages = Object.values(data) as ChatMessage[]
       messages.sort((a, b) => a.timestamp - b.timestamp)
-      callback(messages.slice(-50)) // Keep only last 50 messages
+      callback(messages.slice(-50))
     } else {
       callback([])
     }
@@ -323,6 +441,7 @@ export const createRoom = async (roomName: string, isPrivate = false, password?:
     users: {},
     messageCount: 0,
     isPrivate,
+    kickedUsers: {},
   }
 
   if (isPrivate && password) {
@@ -341,10 +460,7 @@ export const createAndJoinRoom = async (
   password?: string
 ): Promise<{ success: boolean; roomId?: string; userId?: string; error?: string }> => {
   try {
-    // ルームを作成
     const roomId = await createRoom(roomName, isPrivate, password)
-    
-    // 作成者としてルームに参加（重複チェックをスキップ）
     const joinResult = await joinRoom(roomId, username, password, true)
     
     if (joinResult.success) {
@@ -384,8 +500,9 @@ export const getAvailableRooms = (callback: (rooms: Room[]) => void) => {
           messageCount: roomData.messageCount || 0,
           isPrivate: roomData.isPrivate || false,
           password: roomData.password,
+          kickedUsers: roomData.kickedUsers || {},
         }))
-        .filter((room) => Object.keys(room.users).length > 0) // Only show rooms with users
+        .filter((room) => Object.keys(room.users).length > 0)
       callback(rooms.sort((a, b) => b.lastActivity - a.lastActivity))
     } else {
       callback([])
@@ -401,8 +518,18 @@ export const getAvailableRooms = (callback: (rooms: Room[]) => void) => {
 
 export const kickUser = async (roomId: string, userId: string, username: string) => {
   try {
-    await leaveRoom(roomId, userId, username)
-    await addSystemMessage(roomId, `${username}さんがキックされました`, "system")
+    // キックされたユーザーのリストに追加
+    const kickedUserRef = ref(rtdb, `rooms/${roomId}/kickedUsers/${userId}`)
+    await set(kickedUserRef, {
+      username,
+      kickedAt: Date.now()
+    })
+
+    // キックメッセージを追加
+    await addSystemMessage(roomId, `${username}さんがキックされました`, "kick")
+
+    // ユーザーを削除（これによりキックされたユーザーの画面が反応する）
+    await cleanupUser(roomId, userId)
   } catch (error) {
     console.error("Error kicking user:", error)
   }
@@ -416,4 +543,23 @@ export const clearRoomMessages = async (roomId: string) => {
   } catch (error) {
     console.error("Error clearing messages:", error)
   }
+}
+
+// セッションのクリーンアップ
+export const cleanupAllSessions = () => {
+  // タイピングタイムアウトのクリア
+  typingTimeouts.forEach((timeout) => clearTimeout(timeout))
+  typingTimeouts.clear()
+  
+  // キックウォッチャーのクリア
+  kickedUserWatchers.forEach((cleanup) => cleanup())
+  kickedUserWatchers.clear()
+  
+  // アクティブセッションのクリア
+  activeUserSessions.clear()
+}
+
+// ページの終了時にクリーンアップ
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", cleanupAllSessions)
 }
