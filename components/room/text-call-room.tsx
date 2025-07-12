@@ -277,7 +277,8 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   }
 
   const copyRoomLink = () => {
-    const link = `${window.location.origin}/room/${roomId}`
+    // 共有リンクには shared=true パラメータを追加
+    const link = `${window.location.origin}/room/${roomId}?shared=true`
     navigator.clipboard.writeText(link)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)

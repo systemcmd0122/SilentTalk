@@ -26,6 +26,7 @@ export default function RoomPage({ params }: RoomPageProps) {
   const [inputPassword, setInputPassword] = useState("")
   const [isJoining, setIsJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isSharedLink, setIsSharedLink] = useState(false)
   
   // React.use()を使ってparamsを非同期で取得
   const resolvedParams = use(params)
@@ -33,11 +34,17 @@ export default function RoomPage({ params }: RoomPageProps) {
   useEffect(() => {
     const usernameParam = searchParams.get("username")
     const passwordParam = searchParams.get("password")
+    const sharedParam = searchParams.get("shared") // 共有リンクの識別子
+
+    // 共有リンクかどうかを判定
+    const isFromSharedLink = sharedParam === "true" || (!usernameParam && !passwordParam)
+    setIsSharedLink(isFromSharedLink)
 
     if (!usernameParam) {
       // ユーザー名がない場合は入力画面を表示
       setShowUsernameInput(true)
-      setPassword(passwordParam)
+      // 共有リンクの場合はパスワードを要求しない
+      setPassword(isFromSharedLink ? null : passwordParam)
       setIsInitialized(true)
     } else {
       // ユーザー名がある場合は直接ルームに入る
@@ -66,7 +73,8 @@ export default function RoomPage({ params }: RoomPageProps) {
     try {
       // ユーザー名とパスワードを設定してルームに入る
       setUsername(inputUsername.trim())
-      setPassword(inputPassword || null)
+      // 共有リンクの場合は常にパスワードなし、そうでない場合は入力されたパスワードを使用
+      setPassword(isSharedLink ? null : (inputPassword || null))
       setShowUsernameInput(false)
     } catch (error) {
       console.error("Error joining room:", error)
@@ -113,7 +121,10 @@ export default function RoomPage({ params }: RoomPageProps) {
             </div>
             <CardTitle className="text-xl">ルームに参加</CardTitle>
             <p className="text-gray-600 text-sm mt-2">
-              ルームに参加するにはユーザー名を入力してください
+              {isSharedLink 
+                ? "共有リンクからルームに参加するにはユーザー名を入力してください"
+                : "ルームに参加するにはユーザー名を入力してください"
+              }
             </p>
           </CardHeader>
           <CardContent>
@@ -136,7 +147,8 @@ export default function RoomPage({ params }: RoomPageProps) {
                 </p>
               </div>
 
-              {password && (
+              {/* 共有リンクではない場合のみパスワード入力を表示 */}
+              {!isSharedLink && password && (
                 <div className="space-y-2">
                   <Label htmlFor="password" className="flex items-center gap-2">
                     <Lock className="w-4 h-4" />
@@ -153,6 +165,13 @@ export default function RoomPage({ params }: RoomPageProps) {
                   <p className="text-xs text-gray-500">
                     このルームはパスワードで保護されています
                   </p>
+                </div>
+              )}
+
+              {/* 共有リンクの場合の説明 */}
+              {isSharedLink && (
+                <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg">
+                  <p>共有リンクからの参加のため、パスワードは不要です</p>
                 </div>
               )}
 
