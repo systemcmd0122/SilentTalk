@@ -6,8 +6,8 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "フリーテキスト通話 - 匿名リアルタイム文字通話",
-  description: "ユーザー名だけで参加できる匿名テキスト通話サイト。リアルタイムで文字のやり取りができます。",
+  title: "SilentTalk - 匿名リアルタイム文字通話",
+  description: "ユーザー名だけで参加できる匿名テキスト通話サイト(SilentTalk)。リアルタイムで文字のやり取りができます。",
 }
 
 export default function RootLayout({

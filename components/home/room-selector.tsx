@@ -246,36 +246,36 @@ export default function RoomSelector() {
       {/* 背景アニメーション */}
       <BackgroundAnimation />
       
-      <div className="flex items-center justify-center p-4 min-h-screen relative z-10">
-        <div className="w-full max-w-5xl space-y-6">
+      <div className="flex items-center justify-center px-4 py-6 sm:p-4 min-h-screen relative z-10">
+        <div className="w-full max-w-5xl space-y-4 sm:space-y-6">
           {/* Header */}
-          <div className="text-center space-y-4">
-            <div className="flex items-center justify-center gap-4">
-              <div className="p-3 rounded-full bg-blue-500/10 backdrop-blur-sm border border-blue-200/50">
-                <Globe className="w-10 h-10 text-blue-500" />
+          <div className="text-center space-y-3 sm:space-y-4">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4">
+              <div className="p-2 sm:p-3 rounded-full bg-blue-500/10 backdrop-blur-sm border border-blue-200/50">
+                <Globe className="w-8 h-8 sm:w-10 sm:h-10 text-blue-500" />
               </div>
-              <h1 className="text-4xl font-bold text-gray-900 drop-shadow-sm">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 drop-shadow-sm">
                 フリーテキスト通話
               </h1>
             </div>
-            <p className="text-lg text-gray-600">
+            <p className="text-base sm:text-lg text-gray-600 px-4 sm:px-0">
               ユーザー名だけで参加！匿名でリアルタイムテキスト通話を楽しもう
             </p>
           </div>
 
           {/* Username Input */}
           <Card className="mx-auto max-w-md bg-white/80 backdrop-blur-sm border-white/50 shadow-xl">
-            <CardHeader>
-              <CardTitle className="text-center text-gray-900">
+            <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+              <CardTitle className="text-center text-gray-900 text-xl sm:text-2xl">
                 参加情報
               </CardTitle>
-              <CardDescription className="text-center text-gray-600">
+              <CardDescription className="text-center text-gray-600 text-sm sm:text-base">
                 ユーザー名を入力してルームに参加しましょう
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username" className="text-gray-700">
+                <Label htmlFor="username" className="text-gray-700 text-sm sm:text-base">
                   ユーザー名
                 </Label>
                 <Input
@@ -289,23 +289,23 @@ export default function RoomSelector() {
                   }}
                   onBlur={() => validateUsername(username)}
                   maxLength={20}
-                  className={`bg-white/90 backdrop-blur-sm ${usernameError ? "border-red-500" : ""}`}
+                  className={`bg-white/90 backdrop-blur-sm text-base sm:text-lg ${usernameError ? "border-red-500" : ""}`}
                 />
                 {usernameError && (
-                  <p className="text-sm text-red-500">{usernameError}</p>
+                  <p className="text-xs sm:text-sm text-red-500">{usernameError}</p>
                 )}
               </div>
             </CardContent>
           </Card>
 
-          <div className="grid xl:grid-cols-3 gap-6">
+          <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
             {/* Available Rooms */}
-            <Card className="xl:col-span-2 bg-white/80 backdrop-blur-sm border-white/50 shadow-xl">
-              <CardHeader>
-                <div className="flex items-center justify-between">
+            <Card className="lg:col-span-1 xl:col-span-2 bg-white/80 backdrop-blur-sm border-white/50 shadow-xl order-2 lg:order-1">
+              <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
                   <div className="flex items-center gap-2">
-                    <Users className="w-5 h-5 text-gray-700" />
-                    <CardTitle className="text-gray-900">
+                    <Users className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700" />
+                    <CardTitle className="text-gray-900 text-lg sm:text-xl">
                       アクティブなルーム ({availableRooms.length})
                     </CardTitle>
                   </div>
@@ -314,42 +314,42 @@ export default function RoomSelector() {
                     size="sm"
                     onClick={handleRefreshRooms}
                     disabled={refreshing}
-                    className="bg-white/70 backdrop-blur-sm border-white/50 hover:bg-white/90"
+                    className="bg-white/70 backdrop-blur-sm border-white/50 hover:bg-white/90 text-sm"
                   >
-                    <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 ${refreshing ? 'animate-spin' : ''}`} />
                     {refreshing ? '更新中...' : '更新'}
                   </Button>
                 </div>
-                <CardDescription className="text-gray-600">
+                <CardDescription className="text-gray-600 text-sm sm:text-base">
                   既存のルームに参加して会話を始めましょう
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3 max-h-96 overflow-y-auto">
+              <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-4">
+                <div className="space-y-3 max-h-[calc(100vh-24rem)] sm:max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
                   {availableRooms.map((room) => {
                     const userCount = getUserCount(room)
                     
                     return (
                       <div
                         key={room.id}
-                        className="group relative p-4 rounded-lg border bg-white/60 backdrop-blur-sm border-white/50 hover:bg-white/90 transition-all duration-300 hover:shadow-lg hover:scale-[1.02]"
+                        className="group relative p-3 sm:p-4 rounded-lg border bg-white/60 backdrop-blur-sm border-white/50 hover:bg-white/90 transition-all duration-300 hover:shadow-lg active:scale-[0.98] sm:hover:scale-[1.02]"
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="font-medium truncate text-gray-900">
+                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
+                              <div className="font-medium truncate text-sm sm:text-base text-gray-900">
                                 {room.name}
                               </div>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 flex-shrink-0">
                                 {room.isPrivate ? (
-                                  <Lock className="w-4 h-4 text-amber-500" />
+                                  <Lock className="w-3 h-3 sm:w-4 sm:h-4 text-amber-500" />
                                 ) : (
-                                  <Unlock className="w-4 h-4 text-green-500" />
+                                  <Unlock className="w-3 h-3 sm:w-4 sm:h-4 text-green-500" />
                                 )}
                               </div>
                             </div>
                             
-                            <div className="text-sm text-gray-600">
+                            <div className="text-xs sm:text-sm text-gray-600">
                               <span className="flex items-center gap-1">
                                 <Users className="w-3 h-3" />
                                 {userCount}人
@@ -361,7 +361,7 @@ export default function RoomSelector() {
                             size="sm"
                             onClick={() => joinRoom(room)}
                             disabled={loading || !username.trim() || !!usernameError}
-                            className="ml-4 opacity-0 group-hover:opacity-100 transition-all duration-300 hover:scale-105"
+                            className="ml-2 sm:ml-4 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all duration-300 active:scale-95 hover:scale-105 text-xs sm:text-sm"
                           >
                             <ArrowRight className="w-3 h-3 mr-1" />
                             参加
@@ -372,10 +372,10 @@ export default function RoomSelector() {
                   })}
                   
                   {availableRooms.length === 0 && (
-                    <div className="text-center py-12 text-gray-500">
-                      <MessageCircle className="w-16 h-16 mx-auto mb-4 opacity-50 animate-pulse" />
-                      <p className="text-lg mb-2">アクティブなルームがありません</p>
-                      <p className="text-sm">新しいルームを作成してみましょう！</p>
+                    <div className="text-center py-8 sm:py-12 text-gray-500">
+                      <MessageCircle className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 opacity-50 animate-pulse" />
+                      <p className="text-base sm:text-lg mb-1 sm:mb-2">アクティブなルームがありません</p>
+                      <p className="text-xs sm:text-sm">新しいルームを作成してみましょう！</p>
                     </div>
                   )}
                 </div>
@@ -383,19 +383,19 @@ export default function RoomSelector() {
             </Card>
 
             {/* Create New Room */}
-            <Card className="bg-white/80 backdrop-blur-sm border-white/50 shadow-xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-gray-900">
-                  <Plus className="w-5 h-5" />
+            <Card className="bg-white/80 backdrop-blur-sm border-white/50 shadow-xl order-1 lg:order-2">
+              <CardHeader className="px-4 sm:px-6 pt-4 sm:pt-6">
+                <CardTitle className="flex items-center gap-2 text-lg sm:text-xl text-gray-900">
+                  <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
                   新しいルームを作成
                 </CardTitle>
-                <CardDescription className="text-gray-600">
+                <CardDescription className="text-sm sm:text-base text-gray-600">
                   あなた専用のテキスト通話ルームを作成しましょう
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="roomName" className="text-gray-700">
+                  <Label htmlFor="roomName" className="text-sm sm:text-base text-gray-700">
                     ルーム名
                   </Label>
                   <Input
@@ -409,17 +409,17 @@ export default function RoomSelector() {
                     }}
                     onBlur={() => validateRoomName(newRoomName)}
                     maxLength={30}
-                    className={`bg-white/90 backdrop-blur-sm ${roomNameError ? "border-red-500" : ""}`}
+                    className={`bg-white/90 backdrop-blur-sm text-sm sm:text-base ${roomNameError ? "border-red-500" : ""}`}
                   />
                   {roomNameError && (
-                    <p className="text-sm text-red-500">{roomNameError}</p>
+                    <p className="text-xs sm:text-sm text-red-500">{roomNameError}</p>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-lg bg-white/60 backdrop-blur-sm border border-white/50">
+                <div className="flex items-center justify-between p-2 sm:p-3 rounded-lg bg-white/60 backdrop-blur-sm border border-white/50">
                   <div className="flex items-center gap-2">
-                    {isPrivate ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                    <Label htmlFor="private-room" className="text-gray-700">
+                    {isPrivate ? <Lock className="w-3 h-3 sm:w-4 sm:h-4" /> : <Unlock className="w-3 h-3 sm:w-4 sm:h-4" />}
+                    <Label htmlFor="private-room" className="text-sm sm:text-base text-gray-700">
                       プライベートルーム
                     </Label>
                   </div>
@@ -427,12 +427,13 @@ export default function RoomSelector() {
                     id="private-room" 
                     checked={isPrivate} 
                     onCheckedChange={setIsPrivate}
+                    className="scale-90 sm:scale-100"
                   />
                 </div>
 
                 {isPrivate && (
                   <div className="space-y-2">
-                    <Label htmlFor="roomPassword" className="text-gray-700">
+                    <Label htmlFor="roomPassword" className="text-sm sm:text-base text-gray-700">
                       パスワード
                     </Label>
                     <div className="relative">
@@ -443,16 +444,16 @@ export default function RoomSelector() {
                         value={roomPassword}
                         onChange={(e) => setRoomPassword(e.target.value)}
                         maxLength={20}
-                        className="pr-10 bg-white/90 backdrop-blur-sm"
+                        className="pr-10 bg-white/90 backdrop-blur-sm text-sm sm:text-base"
                       />
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        className="absolute right-0 top-0 h-full px-2 sm:px-3 py-1 sm:py-2 hover:bg-transparent"
                         onClick={() => setShowPassword(!showPassword)}
                       >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        {showPassword ? <EyeOff className="w-3 h-3 sm:w-4 sm:h-4" /> : <Eye className="w-3 h-3 sm:w-4 sm:h-4" />}
                       </Button>
                     </div>
                   </div>
@@ -461,11 +462,11 @@ export default function RoomSelector() {
                 <Button
                   onClick={handleCreateRoom}
                   disabled={creatingRoom || !username.trim() || !newRoomName.trim() || !!usernameError || !!roomNameError}
-                  className="w-full hover:scale-105 transition-transform duration-200"
+                  className="w-full hover:scale-105 active:scale-95 transition-transform duration-200 text-sm sm:text-base"
                 >
                   {creatingRoom ? (
                     <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <div className="w-3 h-3 sm:w-4 sm:h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       作成中...
                     </div>
                   ) : (
@@ -480,19 +481,19 @@ export default function RoomSelector() {
 
       {/* Password Dialog */}
       <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
-        <DialogContent className="bg-white/95 backdrop-blur-sm border-white/50">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-gray-900">
-              <Lock className="w-5 h-5 text-amber-500" />
+        <DialogContent className="bg-white/95 backdrop-blur-sm border-white/50 w-[90vw] max-w-md mx-auto p-4 sm:p-6">
+          <DialogHeader className="space-y-2 sm:space-y-3">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg text-gray-900">
+              <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500" />
               プライベートルーム
             </DialogTitle>
-            <DialogDescription className="text-gray-600">
+            <DialogDescription className="text-sm sm:text-base text-gray-600">
               「{selectedRoom?.name}」に参加するにはパスワードが必要です
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 mt-2 sm:mt-4">
             <div className="space-y-2">
-              <Label htmlFor="joinPassword" className="text-gray-700">
+              <Label htmlFor="joinPassword" className="text-sm sm:text-base text-gray-700">
                 パスワード
               </Label>
               <div className="relative">
@@ -503,26 +504,26 @@ export default function RoomSelector() {
                   value={joinPassword}
                   onChange={(e) => setJoinPassword(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handlePasswordSubmit()}
-                  className="pr-10 bg-white/90 backdrop-blur-sm"
+                  className="pr-10 bg-white/90 backdrop-blur-sm text-sm sm:text-base"
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  className="absolute right-0 top-0 h-full px-2 sm:px-3 py-1 sm:py-2 hover:bg-transparent"
                   onClick={() => setShowJoinPassword(!showJoinPassword)}
                 >
-                  {showJoinPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showJoinPassword ? <EyeOff className="w-3 h-3 sm:w-4 sm:h-4" /> : <Eye className="w-3 h-3 sm:w-4 sm:h-4" />}
                 </Button>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 sm:gap-3">
               <Button 
                 onClick={handlePasswordSubmit} 
                 disabled={!joinPassword.trim()} 
-                className="flex-1 hover:scale-105 transition-transform duration-200"
+                className="flex-1 hover:scale-105 active:scale-95 transition-transform duration-200 text-sm sm:text-base"
               >
-                <ArrowRight className="w-4 h-4 mr-2" />
+                <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                 参加
               </Button>
               <Button 
@@ -531,7 +532,7 @@ export default function RoomSelector() {
                   setShowPasswordDialog(false)
                   setJoinPassword("")
                 }}
-                className="bg-white/70 backdrop-blur-sm border-white/50 hover:bg-white/90"
+                className="bg-white/70 backdrop-blur-sm border-white/50 hover:bg-white/90 text-sm sm:text-base"
               >
                 キャンセル
               </Button>
@@ -542,11 +543,11 @@ export default function RoomSelector() {
 
       {/* Loading Overlay */}
       {loading && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="p-6 rounded-lg bg-white/95 backdrop-blur-sm border border-white/50 shadow-2xl">
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              <span className="text-gray-900">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <div className="p-4 sm:p-6 rounded-lg bg-white/95 backdrop-blur-sm border border-white/50 shadow-2xl w-full max-w-xs sm:max-w-sm">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-4 h-4 sm:w-6 sm:h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm sm:text-base text-gray-900">
                 ルームに参加中...
               </span>
             </div>

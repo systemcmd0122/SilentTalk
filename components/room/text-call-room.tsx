@@ -9,6 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -30,6 +37,7 @@ import {
   Crown,
   ChevronDown,
   ChevronUp,
+  Menu,
 } from "lucide-react"
 import {
   joinRoom,
@@ -42,6 +50,7 @@ import {
   type Room,
   type ChatMessage,
 } from "@/lib/room-manager"
+import { useMediaQuery } from "@/hooks/use-media-query"
 
 interface TextCallRoomProps {
   roomId: string
@@ -59,12 +68,15 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   const [isMuted, setIsMuted] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const [chatExpanded, setChatExpanded] = useState(false)
+  const [showParticipants, setShowParticipants] = useState(false)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isJoined, setIsJoined] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
   const [unreadMessages, setUnreadMessages] = useState(0)
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
+
   const router = useRouter()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -72,6 +84,9 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
   const lastMessageCountRef = useRef(0)
+
+  const isMobile = useMediaQuery("(max-width: 768px)")
+  const isTablet = useMediaQuery("(max-width: 1024px)")
 
   const currentUser = room && currentUserId ? room.users[currentUserId] : null
 
@@ -100,7 +115,6 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     [updateTypingState],
   )
 
-  // チャットの自動スクロール処理
   const scrollToBottom = useCallback(() => {
     if (chatScrollRef.current && autoScroll) {
       const scrollContainer = chatScrollRef.current
@@ -108,12 +122,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     }
   }, [autoScroll])
 
-  // チャットスクロール監視
   const handleChatScroll = useCallback(() => {
     if (chatScrollRef.current) {
       const scrollContainer = chatScrollRef.current
       const { scrollTop, scrollHeight, clientHeight } = scrollContainer
-      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10 // 10px の余裕を持たせる
+      const isAtBottom = scrollTop + clientHeight >= scrollHeight - 10
       setAutoScroll(isAtBottom)
     }
   }, [])
@@ -148,7 +161,6 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
       }
     }
 
-    // リスナーを設定
     roomUnsubscribe = listenToRoom(roomId, (roomData) => {
       if (!mounted) return
       setRoom(roomData)
@@ -159,10 +171,8 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
       setMessages(messagesData)
     })
 
-    // ルームに参加
     initializeRoom()
 
-    // クリーンアップ関数を設定
     cleanupRef.current = () => {
       if (roomUnsubscribe) roomUnsubscribe()
       if (messagesUnsubscribe) messagesUnsubscribe()
@@ -179,25 +189,20 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     }
   }, [roomId, username, password])
 
-  // メッセージが更新されたときの処理
   useEffect(() => {
     const newMessageCount = messages.length
     const hasNewMessages = newMessageCount > lastMessageCountRef.current
     
     if (hasNewMessages) {
-      // チャットが非表示の場合、未読カウントを増やす
       if (!showChat) {
         setUnreadMessages(prev => prev + (newMessageCount - lastMessageCountRef.current))
       }
-      
-      // 自動スクロール
       setTimeout(scrollToBottom, 100)
     }
     
     lastMessageCountRef.current = newMessageCount
   }, [messages, showChat, scrollToBottom])
 
-  // チャットを開いたときに未読カウントをリセット
   useEffect(() => {
     if (showChat) {
       setUnreadMessages(0)
@@ -245,7 +250,6 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     try {
       await sendChatMessage(roomId, currentUserId, username, chatMessage.trim(), currentUser.color)
       setChatMessage("")
-      // 送信後にフォーカスを入力フィールドに戻す
       if (chatInputRef.current) {
         chatInputRef.current.focus()
       }
@@ -277,7 +281,6 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
   }
 
   const copyRoomLink = () => {
-    // 共有リンクには shared=true パラメータを追加
     const link = `${window.location.origin}/room/${roomId}?shared=true`
     navigator.clipboard.writeText(link)
     setCopied(true)
@@ -320,53 +323,115 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
     )
   }
 
+  const renderParticipantsList = () => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 p-2 bg-blue-50 rounded">
+        <div
+          className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold"
+          style={{ backgroundColor: currentUser?.color || "#3B82F6" }}
+        >
+          {username ? username.charAt(0).toUpperCase() : "?"}
+        </div>
+        <span className="text-sm font-medium flex-1">{username} (あなた)</span>
+        {isRoomOwner && <Crown className="w-4 h-4 text-amber-500" />}
+        {isMuted && (
+          <Badge variant="secondary" className="text-xs">
+            ミュート
+          </Badge>
+        )}
+      </div>
+
+      <Separator />
+
+      {otherUsers.map((user, index) => (
+        <div key={user.id || `other-user-${index}`} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded">
+          <div
+            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold"
+            style={{ backgroundColor: user.color }}
+          >
+            {user.username ? user.username.charAt(0).toUpperCase() : "?"}
+          </div>
+          <span className="text-sm flex-1">{user.username || "Unknown"}</span>
+          {(user.typing || user.composing) && (
+            <Badge variant="outline" className="text-xs">
+              入力中
+            </Badge>
+          )}
+        </div>
+      ))}
+
+      {otherUsers.length === 0 && (
+        <div className="text-center text-gray-500 py-4">
+          <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+          <p className="text-sm">他の参加者を待っています</p>
+          <p className="text-xs">リンクを共有して友達を招待しましょう</p>
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Header */}
       <header className="bg-white border-b px-4 py-3 flex-shrink-0">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
+            {isMobile && (
+              <Button variant="ghost" size="sm" onClick={() => setShowMobileMenu(true)}>
+                <Menu className="w-5 h-5" />
+              </Button>
+            )}
             <div>
               <h1 className="text-lg font-semibold flex items-center gap-2">
-                {room?.name || "テキスト通話ルーム"}
-                {room?.isPrivate && <Badge variant="secondary">プライベート</Badge>}
+                <span className="truncate max-w-[200px] md:max-w-none">
+                  {room?.name || "テキスト通話ルーム"}
+                </span>
+                {room?.isPrivate && (
+                  <Badge variant="secondary" className="hidden sm:inline-flex">
+                    プライベート
+                  </Badge>
+                )}
               </h1>
               <div className="flex items-center gap-4 text-sm text-gray-500">
                 <span className="flex items-center gap-1">
                   <Users className="w-4 h-4" />
                   {room ? Object.keys(room.users).length : 0}人参加中
                 </span>
-                <span>あなた: {username}</span>
+                <span className="hidden sm:inline">あなた: {username}</span>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button 
-              variant={showChat ? "default" : "outline"} 
-              size="sm" 
-              onClick={() => setShowChat(!showChat)}
-              className="relative"
-            >
-              <MessageSquare className="w-4 h-4" />
-              チャット
-              {unreadMessages > 0 && !showChat && (
-                <Badge 
-                  variant="destructive" 
-                  className="absolute -top-2 -right-2 px-1 py-0 text-xs min-w-[20px] h-5 flex items-center justify-center"
+            {!isMobile && (
+              <>
+                <Button 
+                  variant={showChat ? "default" : "outline"} 
+                  size="sm" 
+                  onClick={() => setShowChat(!showChat)}
+                  className="relative"
                 >
-                  {unreadMessages > 99 ? '99+' : unreadMessages}
-                </Badge>
-              )}
-            </Button>
-            <Button variant="outline" size="sm" onClick={copyRoomLink}>
-              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              {copied ? "コピー済み" : "リンクをコピー"}
-            </Button>
-            <Button variant={isMuted ? "destructive" : "outline"} size="sm" onClick={toggleMute}>
-              {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-              {isMuted ? "ミュート中" : "ミュート"}
-            </Button>
-            {isRoomOwner && (
+                  <MessageSquare className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">チャット</span>
+                  {unreadMessages > 0 && !showChat && (
+                    <Badge 
+                      variant="destructive" 
+                      className="absolute -top-2 -right-2 px-1 py-0 text-xs min-w-[20px] h-5 flex items-center justify-center"
+                    >
+                      {unreadMessages > 99 ? '99+' : unreadMessages}
+                    </Badge>
+                  )}
+                </Button>
+                <Button variant="outline" size="sm" onClick={copyRoomLink}>
+                  {copied ? <Check className="w-4 h-4 sm:mr-2" /> : <Copy className="w-4 h-4 sm:mr-2" />}
+                  <span className="hidden sm:inline">{copied ? "コピー済み" : "リンクをコピー"}</span>
+                </Button>
+                <Button variant={isMuted ? "destructive" : "outline"} size="sm" onClick={toggleMute}>
+                  {isMuted ? <MicOff className="w-4 h-4 sm:mr-2" /> : <Mic className="w-4 h-4 sm:mr-2" />}
+                  <span className="hidden sm:inline">{isMuted ? "ミュート中" : "ミュート"}</span>
+                </Button>
+              </>
+            )}
+            {isRoomOwner && !isMobile && (
               <Dialog>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm">
@@ -390,69 +455,79 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                 </DialogContent>
               </Dialog>
             )}
-            <Button variant="outline" onClick={leaveRoomHandler}>
-              <LogOut className="w-4 h-4 mr-2" />
-              退出
-            </Button>
+            {!isMobile && (
+              <Button variant="outline" onClick={leaveRoomHandler}>
+                <LogOut className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">退出</span>
+              </Button>
+            )}
           </div>
         </div>
       </header>
 
-      <div className="flex-1 flex max-w-6xl mx-auto w-full p-4 gap-4 overflow-hidden">
-        {/* 参加者一覧 */}
-        <Card className="w-80 flex-shrink-0 flex flex-col">
-          <CardHeader className="flex-shrink-0">
-            <CardTitle className="text-sm">参加者 ({room ? Object.keys(room.users).length : 0})</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-y-auto">
-            <div className="space-y-2">
-              {/* 自分 */}
-              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded">
-                <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold"
-                  style={{ backgroundColor: currentUser?.color || "#3B82F6" }}
-                >
-                  {username ? username.charAt(0).toUpperCase() : "?"}
-                </div>
-                <span className="text-sm font-medium flex-1">{username} (あなた)</span>
-                {isRoomOwner && <Crown className="w-4 h-4 text-amber-500" />}
-                {isMuted && (
-                  <Badge variant="secondary" className="text-xs">
-                    ミュート
+      {/* Mobile Menu Sheet */}
+      <Sheet open={showMobileMenu} onOpenChange={setShowMobileMenu}>
+        <SheetContent side="left" className="w-[300px] sm:w-[400px]">
+          <SheetHeader>
+            <SheetTitle>メニュー</SheetTitle>
+          </SheetHeader>
+          <div className="py-4">
+            <div className="space-y-4">
+              <Button 
+                variant={showChat ? "default" : "outline"} 
+                size="sm" 
+                onClick={() => {
+                  setShowChat(!showChat)
+                  setShowMobileMenu(false)
+                }}
+                className="w-full relative"
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                チャット
+                {unreadMessages > 0 && !showChat && (
+                  <Badge 
+                    variant="destructive" 
+                    className="absolute -top-2 -right-2 px-1 py-0 text-xs min-w-[20px] h-5 flex items-center justify-center"
+                  >
+                    {unreadMessages > 99 ? '99+' : unreadMessages}
                   </Badge>
                 )}
-              </div>
-
-              <Separator />
-
-              {/* 他の参加者 */}
-              {otherUsers.map((user, index) => (
-                <div key={user.id || `other-user-${index}`} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded">
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold"
-                    style={{ backgroundColor: user.color }}
-                  >
-                    {user.username ? user.username.charAt(0).toUpperCase() : "?"}
-                  </div>
-                  <span className="text-sm flex-1">{user.username || "Unknown"}</span>
-                  {(user.typing || user.composing) && (
-                    <Badge variant="outline" className="text-xs">
-                      入力中
-                    </Badge>
-                  )}
-                </div>
-              ))}
-
-              {otherUsers.length === 0 && (
-                <div className="text-center text-gray-500 py-4">
-                  <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">他の参加者を待っています</p>
-                  <p className="text-xs">リンクを共有して友達を招待しましょう</p>
-                </div>
+              </Button>
+              <Button variant="outline" size="sm" onClick={copyRoomLink} className="w-full">
+                {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                {copied ? "コピー済み" : "リンクをコピー"}
+              </Button>
+              <Button variant={isMuted ? "destructive" : "outline"} size="sm" onClick={toggleMute} className="w-full">
+                {isMuted ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
+                {isMuted ? "ミュート中" : "ミュート"}
+              </Button>
+              {isRoomOwner && (
+                <Button variant="outline" size="sm" onClick={handleClearMessages} className="w-full">
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  チャット履歴をクリア
+                </Button>
               )}
+              <Button variant="outline" onClick={leaveRoomHandler} className="w-full">
+                <LogOut className="w-4 h-4 mr-2" />
+                退出
+              </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <div className="flex-1 flex max-w-6xl mx-auto w-full p-4 gap-4 overflow-hidden">
+        {/* 参加者一覧 - デスクトップ */}
+        {!isMobile && (
+          <Card className="w-80 flex-shrink-0 flex flex-col">
+            <CardHeader className="flex-shrink-0">
+              <CardTitle className="text-sm">参加者 ({room ? Object.keys(room.users).length : 0})</CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto">
+              {renderParticipantsList()}
+            </CardContent>
+          </Card>
+        )}
 
         {/* メインエリア */}
         <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-hidden">
@@ -567,9 +642,11 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
           {otherUsers.length > 0 && (
             <div
               className="flex-shrink-0 grid gap-4"
-              style={{ gridTemplateColumns: `repeat(${Math.min(otherUsers.length, 2)}, 1fr)` }}
+              style={{ 
+                gridTemplateColumns: `repeat(${isMobile ? 1 : Math.min(otherUsers.length, 2)}, 1fr)` 
+              }}
             >
-              {otherUsers.slice(0, 4).map((user, index) => (
+              {otherUsers.slice(0, isMobile ? 2 : 4).map((user, index) => (
                 <Card key={user.id || `user-${index}`} className="min-h-0">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -579,17 +656,17 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                       >
                         {user.username ? user.username.charAt(0).toUpperCase() : "?"}
                       </div>
-                      {user.username || "Unknown"}
+                      <span className="truncate">{user.username || "Unknown"}</span>
                       {user.isTyping && (
-                        <Badge variant="outline" className="text-xs">
+                        <Badge variant="outline" className="text-xs whitespace-nowrap">
                           入力中
                         </Badge>
                       )}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="min-h-[200px] p-3 bg-gray-50 rounded-lg">
-                      <div className="text-base leading-relaxed whitespace-pre-wrap">
+                    <div className="min-h-[150px] md:min-h-[200px] p-3 bg-gray-50 rounded-lg">
+                      <div className="text-base leading-relaxed whitespace-pre-wrap break-words">
                         {user.composing && (
                           <span key={`composing-${user.id || index}`} className="text-gray-500 bg-yellow-100 px-1 rounded">{user.composing}</span>
                         )}
@@ -613,9 +690,9 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                 >
                   {username ? username.charAt(0).toUpperCase() : "?"}
                 </div>
-                あなた ({username})
+                <span className="truncate">あなた ({username})</span>
                 {isMuted && (
-                  <Badge variant="destructive" className="text-xs">
+                  <Badge variant="destructive" className="text-xs whitespace-nowrap">
                     ミュート中
                   </Badge>
                 )}
@@ -631,17 +708,32 @@ export default function TextCallRoom({ roomId, username, password }: TextCallRoo
                 onKeyDown={handleKeyDown}
                 placeholder={isMuted ? "ミュート中です" : "ここに入力してください..."}
                 disabled={isMuted}
-                className="flex-1 w-full p-4 text-base leading-relaxed resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500 min-h-[200px]"
+                className="flex-1 w-full p-4 text-base leading-relaxed resize-none border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+                style={{ minHeight: isMobile ? '150px' : '200px' }}
                 autoFocus
               />
               <div className="flex-shrink-0 mt-2 text-sm text-gray-500">
                 {isMuted
                   ? "ミュート中 - 他の参加者に文字が表示されません"
-                  : "入力中の文字がリアルタイムで他の参加者に表示されます"}
+                                    : "入力中の文字がリアルタイムで他の参加者に表示されます"}
               </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* 参加者一覧 - モバイル */}
+        {isMobile && (
+          <Sheet open={showParticipants} onOpenChange={setShowParticipants}>
+            <SheetContent side="left" className="w-[300px] sm:w-[400px]">
+              <SheetHeader>
+                <SheetTitle>参加者 ({room ? Object.keys(room.users).length : 0})</SheetTitle>
+              </SheetHeader>
+              <div className="py-4">
+                {renderParticipantsList()}
+              </div>
+            </SheetContent>
+          </Sheet>
+        )}
       </div>
     </div>
   )

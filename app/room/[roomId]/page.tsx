@@ -99,7 +99,7 @@ export default function RoomPage({ params }: RoomPageProps) {
 
   if (!isInitialized) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600">読み込み中...</p>
@@ -119,7 +119,7 @@ export default function RoomPage({ params }: RoomPageProps) {
                 <Users className="w-6 h-6 text-white" />
               </div>
             </div>
-            <CardTitle className="text-xl">ルームに参加</CardTitle>
+            <CardTitle className="text-lg sm:text-xl">ルームに参加</CardTitle>
             <p className="text-gray-600 text-sm mt-2">
               {isSharedLink 
                 ? "共有リンクからルームに参加するにはユーザー名を入力してください"
@@ -141,6 +141,7 @@ export default function RoomPage({ params }: RoomPageProps) {
                   required
                   autoFocus
                   disabled={isJoining}
+                  className="text-base" // モバイルでズームを防ぐ
                 />
                 <p className="text-xs text-gray-500">
                   {inputUsername.length}/20文字
@@ -161,6 +162,7 @@ export default function RoomPage({ params }: RoomPageProps) {
                     onChange={handlePasswordChange}
                     placeholder="パスワードを入力"
                     disabled={isJoining}
+                    className="text-base" // モバイルでズームを防ぐ
                   />
                   <p className="text-xs text-gray-500">
                     このルームはパスワードで保護されています
@@ -184,7 +186,7 @@ export default function RoomPage({ params }: RoomPageProps) {
               <div className="flex flex-col gap-2">
                 <Button 
                   type="submit" 
-                  className="w-full"
+                  className="w-full h-12 text-base" // モバイルでのタップしやすさを考慮
                   disabled={isJoining || !inputUsername.trim()}
                 >
                   {isJoining ? (
@@ -199,7 +201,7 @@ export default function RoomPage({ params }: RoomPageProps) {
                 <Button 
                   type="button" 
                   variant="outline" 
-                  className="w-full"
+                  className="w-full h-12 text-base" // モバイルでのタップしやすさを考慮
                   onClick={handleBackToHome}
                   disabled={isJoining}
                 >
@@ -220,10 +222,10 @@ export default function RoomPage({ params }: RoomPageProps) {
 
   // 何らかのエラーが発生した場合
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
       <div className="text-center">
         <p className="text-red-500 mb-4">エラーが発生しました</p>
-        <Button onClick={handleBackToHome}>ホームに戻る</Button>
+        <Button onClick={handleBackToHome} className="h-12 px-6">ホームに戻る</Button>
       </div>
     </div>
   )
