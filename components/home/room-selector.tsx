@@ -142,11 +142,7 @@ export default function RoomSelector() {
   const handleRefreshRooms = useCallback(async () => {
     setRefreshing(true)
     try {
-      // 少し待機してからリロード（UXのため）
       await new Promise(resolve => setTimeout(resolve, 500))
-      // 実際の実装ではここでデータを再取得する
-      // 現在の実装では既にリアルタイムで更新されているため、
-      // 視覚的なフィードバックのみ提供
     } finally {
       setRefreshing(false)
     }
@@ -236,11 +232,6 @@ export default function RoomSelector() {
     }
   }, [username, newRoomName, isPrivate, roomPassword, validateUsername, validateRoomName, router])
 
-  // ユーティリティ関数
-  const getUserCount = (room: Room): number => {
-    return Object.keys(room.users).length
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 relative overflow-hidden">
       {/* 背景アニメーション */}
@@ -324,52 +315,48 @@ export default function RoomSelector() {
                   既存のルームに参加して会話を始めましょう
                 </CardDescription>
               </CardHeader>
-              <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6 space-y-4">
+              <CardContent className="px-4 sm:px-6 pb-4 sm:pb-6">
                 <div className="space-y-3 max-h-[calc(100vh-24rem)] sm:max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                  {availableRooms.map((room) => {
-                    const userCount = getUserCount(room)
-                    
-                    return (
-                      <div
-                        key={room.id}
-                        className="group relative p-3 sm:p-4 rounded-lg border bg-white/60 backdrop-blur-sm border-white/50 hover:bg-white/90 transition-all duration-300 hover:shadow-lg active:scale-[0.98] sm:hover:scale-[1.02]"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 sm:mb-2">
-                              <div className="font-medium truncate text-sm sm:text-base text-gray-900">
-                                {room.name}
-                              </div>
-                              <div className="flex items-center gap-1 flex-shrink-0">
-                                {room.isPrivate ? (
-                                  <Lock className="w-3 h-3 sm:w-4 sm:h-4 text-amber-500" />
-                                ) : (
-                                  <Unlock className="w-3 h-3 sm:w-4 sm:h-4 text-green-500" />
-                                )}
-                              </div>
+                  {availableRooms.map((room) => (
+                    <div
+                      key={room.id}
+                      className="group relative p-3 sm:p-4 rounded-lg border bg-white/60 backdrop-blur-sm border-white/50 hover:bg-white/90 transition-all duration-300 hover:shadow-lg active:scale-[0.98]"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 sm:mb-2">
+                            <div className="font-medium truncate text-sm sm:text-base text-gray-900">
+                              {room.name}
                             </div>
-                            
-                            <div className="text-xs sm:text-sm text-gray-600">
-                              <span className="flex items-center gap-1">
-                                <Users className="w-3 h-3" />
-                                {userCount}人
-                              </span>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {room.isPrivate ? (
+                                <Lock className="w-3 h-3 sm:w-4 sm:h-4 text-amber-500" />
+                              ) : (
+                                <Unlock className="w-3 h-3 sm:w-4 sm:h-4 text-green-500" />
+                              )}
                             </div>
                           </div>
                           
-                          <Button
-                            size="sm"
-                            onClick={() => joinRoom(room)}
-                            disabled={loading || !username.trim() || !!usernameError}
-                            className="ml-2 sm:ml-4 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all duration-300 active:scale-95 hover:scale-105 text-xs sm:text-sm"
-                          >
-                            <ArrowRight className="w-3 h-3 mr-1" />
-                            参加
-                          </Button>
+                          <div className="text-xs sm:text-sm text-gray-600">
+                            <span className="flex items-center gap-1">
+                              <Users className="w-3 h-3" />
+                              {Object.keys(room.users).length}人
+                            </span>
+                          </div>
                         </div>
+                        
+                        <Button
+                          size="sm"
+                          onClick={() => joinRoom(room)}
+                          disabled={loading || !username.trim() || !!usernameError}
+                          className="ml-2 sm:ml-4 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-all duration-300 active:scale-95 hover:scale-105 text-xs sm:text-sm"
+                        >
+                          <ArrowRight className="w-3 h-3 mr-1" />
+                          参加
+                        </Button>
                       </div>
-                    )
-                  })}
+                    </div>
+                  ))}
                   
                   {availableRooms.length === 0 && (
                     <div className="text-center py-8 sm:py-12 text-gray-500">
