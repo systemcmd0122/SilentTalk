@@ -246,7 +246,7 @@ export default function RoomSelector() {
                 <Globe className="w-8 h-8 sm:w-10 sm:h-10 text-blue-500" />
               </div>
               <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 drop-shadow-sm">
-                フリーテキスト通話
+                SilentTalk
               </h1>
             </div>
             <p className="text-base sm:text-lg text-gray-600 px-4 sm:px-0">
